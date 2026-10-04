@@ -6,8 +6,11 @@ class ResNetEncoder(nn.Module):
     def __init__(self, pretrained=True):
         super().__init__()
         
-        weights = models.ResNet34_Weights.DEFAULT
-        model = models.resnet34(weights=weights)
+        if pretrained:
+            weights = models.ResNet34_Weights.DEFAULT
+            model = models.resnet34(weights=weights)
+        else:
+            model =  models.resnet34()
         
         self.layer0 = nn.Sequential(
             model.conv1,

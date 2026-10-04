@@ -1,10 +1,21 @@
 seed: 42
-image_size:
-batch_size: 64 # 64 takes up almost all of the 2x t4s so it is a good number
-lr:
-epochs: 100 # This is the max epochs, as we plan to add early stopping etc 
-loss:          # you used BCE + Dice before; what name will you use to select it in code?
-encoder:       # e.g. a torchvision model name
-pretrained:    # true/false
-num_workers:
-output_dir:
+
+# data
+data_root: /kaggle/working/data          # on Kaggle: point this at the attached Pets input
+val_fraction: 0.1
+image_size: 256
+num_workers: 4
+
+# training
+batch_size: 64             # nearly fills 2x T4; drop to 32 if you hit OOM
+epochs: 100                # max epochs; early stopping will cut this short
+lr: 1.0e-3                 # decoder + head
+encoder_lr: 1.0e-4         # pretrained encoder learns slower
+loss: bce_dice
+
+# model
+encoder: resnet34
+pretrained: true
+
+# output
+output_dir: /kaggle/working/outputs      # on Kaggle: /kaggle/working/outputs
