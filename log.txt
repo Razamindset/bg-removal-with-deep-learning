@@ -1,0 +1,10 @@
+1. Write config loading in train.py
+2. Add checkpointing 
+3. early stoppping, 
+4. mIxed loss
+5. weights freezing
+6. Resuming
+7. grpahs 
+8. predictions
+
+Pets -> other large dataset
