@@ -8,7 +8,7 @@ class Config:
     data_dir: str = "/kaggle/input/datasets/rahulbhalley/p3m-10k"
     image_size: int = 256
     val_split: float = 0.1
-    batch_size: int = 16
+    batch_size: int = 64
     num_workers: int = 2
     seed: int = 42
 
