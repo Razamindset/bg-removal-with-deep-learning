@@ -4,6 +4,7 @@ import random
 from typing import List, Tuple
 
 import numpy as np
+import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 from PIL import Image
@@ -137,21 +138,27 @@ def get_dataloaders(cfg):
     train_ds = HumanMattingDataset(train_pairs, image_size=cfg.image_size, augment=True)
     val_ds = HumanMattingDataset(val_pairs, image_size=cfg.image_size, augment=False)
 
+    loader_kwargs = {
+        "num_workers": cfg.num_workers,
+        "pin_memory": torch.cuda.is_available(),
+        "persistent_workers": cfg.num_workers > 0,
+    }
+    if cfg.num_workers > 0:
+        loader_kwargs["prefetch_factor"] = 4
+
     train_loader = DataLoader(
         train_ds,
         batch_size=cfg.batch_size,
         shuffle=True,
-        num_workers=cfg.num_workers,
-        pin_memory=True,
         drop_last=True,
+        **loader_kwargs,
     )
 
     val_loader = DataLoader(
         val_ds,
         batch_size=cfg.batch_size,
         shuffle=False,
-        num_workers=cfg.num_workers,
-        pin_memory=True,
+        **loader_kwargs,
     )
 
     print(f"Loaded {len(pairs)} total pairs: {len(train_ds)} train, {len(val_ds)} val")
