@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
+from tqdm import tqdm
 
 from model import ResNetUNet
 
@@ -104,7 +105,7 @@ def main():
         return
 
     os.makedirs(args.output, exist_ok=True)
-    for f in files:
+    for f in tqdm(files, desc="Processing images", disable=len(files) <= 1):
         base = os.path.splitext(os.path.basename(f))[0]
         out_ext = ".png" if args.bg_color is None else ".jpg"
         out_p = os.path.join(args.output, f"{base}_nobg{out_ext}")

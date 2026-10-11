@@ -1,6 +1,6 @@
 """
 Clean, straightforward training script for Human Background Removal.
-Supports Single-GPU, Multi-GPU (nn.DataParallel), and CPU.
+Supports Single-GPU, Multi-GPU (nn.DataParallel), and CPU with tqdm progress tracking.
 """
 
 import csv
@@ -9,6 +9,7 @@ import time
 
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 
 from config import cfg
 from dataset import get_dataloaders
@@ -28,11 +29,12 @@ def set_encoder_freeze(model: nn.Module, freeze: bool):
             param.requires_grad = not freeze
 
 
-def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp):
+def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp, epoch: int):
     model.train()
     total_loss, total_samples = 0.0, 0
 
-    for images, masks in loader:
+    pbar = tqdm(loader, desc=f"Epoch {epoch:2d}/{cfg.epochs} [Train]", leave=False)
+    for images, masks in pbar:
         images = images.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
 
@@ -53,15 +55,21 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp
         total_loss += loss.item() * b
         total_samples += b
 
+        pbar.set_postfix({
+            "loss": f"{loss.item():.4f}",
+            "avg_loss": f"{total_loss / total_samples:.4f}",
+        })
+
     return total_loss / total_samples
 
 
 @torch.no_grad()
-def evaluate(model, loader, criterion, device, use_amp):
+def evaluate(model, loader, criterion, device, use_amp, epoch: int):
     model.eval()
     total_loss, total_dice, total_iou, total_samples = 0.0, 0.0, 0.0, 0
 
-    for images, masks in loader:
+    pbar = tqdm(loader, desc=f"Epoch {epoch:2d}/{cfg.epochs} [Val]  ", leave=False)
+    for images, masks in pbar:
         images = images.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
 
@@ -74,6 +82,12 @@ def evaluate(model, loader, criterion, device, use_amp):
         total_dice += dice_score(logits, masks) * b
         total_iou += iou_score(logits, masks) * b
         total_samples += b
+
+        pbar.set_postfix({
+            "val_loss": f"{total_loss / total_samples:.4f}",
+            "dice": f"{total_dice / total_samples:.4f}",
+            "iou": f"{total_iou / total_samples:.4f}",
+        })
 
     return (
         total_loss / total_samples,
@@ -137,8 +151,12 @@ def main():
         is_frozen = epoch <= cfg.freeze_epochs
         set_encoder_freeze(model, freeze=is_frozen)
 
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, scaler, device, use_amp)
-        val_loss, val_dice, val_iou = evaluate(model, val_loader, criterion, device, use_amp)
+        train_loss = train_one_epoch(
+            model, train_loader, criterion, optimizer, scaler, device, use_amp, epoch=epoch
+        )
+        val_loss, val_dice, val_iou = evaluate(
+            model, val_loader, criterion, device, use_amp, epoch=epoch
+        )
         scheduler.step()
 
         elapsed = time.time() - t0
@@ -159,12 +177,13 @@ def main():
                 "time_s": round(elapsed, 1),
             })
 
-        print(
+        status_msg = (
             f"Epoch {epoch:2d}/{cfg.epochs} | Train Loss: {train_loss:.4f} | "
             f"Val Loss: {val_loss:.4f} | Val Dice: {val_dice:.4f} | "
             f"Val IoU: {val_iou:.4f} | LR: {curr_lr:.2e} | {elapsed:.1f}s"
             f"{' [FROZEN]' if is_frozen else ''}"
         )
+        print(status_msg)
 
         # Checkpoint: Save best model (unwrapped state dict for seamless single-GPU/CPU inference)
         if val_dice > best_dice:
