@@ -1,0 +1,14 @@
+# Deep Learning & Vision
+torch>=2.0.0
+torchvision>=0.15.0
+pillow>=9.5.0
+numpy>=1.23.0
+
+# Configuration & Data Handling
+pyyaml>=6.0
+pandas>=2.0.0
+scipy>=1.10.0
+
+# Visualization & Logging
+matplotlib>=3.7.0
+tqdm>=4.65.0

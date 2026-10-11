@@ -29,6 +29,7 @@ class PetDataset(Dataset):
 
     def __getitem__(self, index):
         img, mask = self.dataset[index]
+        img = img.convert("RGB")
 
         size = (self.image_size, self.image_size)
         img = img.resize(size, Image.BILINEAR)
