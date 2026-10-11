@@ -9,11 +9,8 @@ class Config:
     image_size: int = 256
     val_split: float = 0.1
     batch_size: int = 64
-    num_workers: int = 4
+    num_workers: int = 2
     seed: int = 42
-    cache_resized: bool = True
-    cache_dir: str = ""          # Empty = output_dir/cache_{image_size}; Kaggle can use /kaggle/working/cache_256
-    rotation_degrees: float = 0.0 # Rotation is CPU-heavy; set to 10.0 to restore the old augmentation
 
     # --- Training Hyperparameters ---
     epochs: int = 40
@@ -23,8 +20,6 @@ class Config:
     freeze_epochs: int = 2       # Initial epochs to keep encoder frozen (warmup)
     max_grad_norm: float = 1.0   # Gradient clipping threshold
     patience: int = 8            # Early stopping patience on validation Dice
-    progress_interval: int = 20   # Update progress bars every N batches to avoid GPU sync overhead
-    use_data_parallel: bool = True
 
     # --- Hardware & Outputs ---
     device: str = "cuda" if torch.cuda.is_available() else "cpu"

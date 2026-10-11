@@ -42,35 +42,23 @@ class BCEDiceLoss(nn.Module):
 
 
 @torch.no_grad()
-def dice_score_tensor(logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5, eps: float = 1e-6):
-    """Computes binary Dice coefficient metric (F1-score) as a tensor."""
+def dice_score(logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5, eps: float = 1e-6) -> float:
+    """Computes binary Dice coefficient metric (F1-score)."""
     preds = (torch.sigmoid(logits) >= threshold).float()
     dims = (1, 2, 3)
     intersection = (preds * targets).sum(dim=dims)
     total = preds.sum(dim=dims) + targets.sum(dim=dims)
-    return ((2.0 * intersection + eps) / (total + eps)).mean()
-
-
-@torch.no_grad()
-def iou_score_tensor(logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5, eps: float = 1e-6):
-    """Computes Intersection over Union (Jaccard Index) as a tensor."""
-    preds = (torch.sigmoid(logits) >= threshold).float()
-    dims = (1, 2, 3)
-    intersection = (preds * targets).sum(dim=dims)
-    union = preds.sum(dim=dims) + targets.sum(dim=dims) - intersection
-    return ((intersection + eps) / (union + eps)).mean()
-
-
-@torch.no_grad()
-def dice_score(logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5, eps: float = 1e-6) -> float:
-    """Computes binary Dice coefficient metric (F1-score)."""
-    return dice_score_tensor(logits, targets, threshold=threshold, eps=eps).item()
+    return (((2.0 * intersection + eps) / (total + eps)).mean()).item()
 
 
 @torch.no_grad()
 def iou_score(logits: torch.Tensor, targets: torch.Tensor, threshold: float = 0.5, eps: float = 1e-6) -> float:
-    """Computes Intersection over Union (Jaccard Index)."""
-    return iou_score_tensor(logits, targets, threshold=threshold, eps=eps).item()
+    """Computes Intersection over Union (Jaccard Index) metric."""
+    preds = (torch.sigmoid(logits) >= threshold).float()
+    dims = (1, 2, 3)
+    intersection = (preds * targets).sum(dim=dims)
+    union = preds.sum(dim=dims) + targets.sum(dim=dims) - intersection
+    return (((intersection + eps) / (union + eps)).mean()).item()
 
 
 if __name__ == "__main__":

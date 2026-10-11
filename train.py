@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from config import cfg
 from dataset import get_dataloaders
-from loss import BCEDiceLoss, dice_score_tensor, iou_score_tensor
+from loss import BCEDiceLoss, dice_score, iou_score
 from model import ResNetUNet
 
 
@@ -31,15 +31,11 @@ def set_encoder_freeze(model: nn.Module, freeze: bool):
 
 def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp, epoch: int):
     model.train()
-    total_loss = torch.zeros((), device=device)
-    total_samples = 0
-    total_data_time, total_step_time = 0.0, 0.0
+    total_loss, total_samples = 0.0, 0
 
     pbar = tqdm(loader, desc=f"Epoch {epoch:2d}/{cfg.epochs} [Train]", leave=False)
-    end = time.time()
-    for step, (images, masks) in enumerate(pbar, start=1):
-        data_time = time.time() - end
-        images = images.to(device, non_blocking=True, memory_format=torch.channels_last)
+    for images, masks in pbar:
+        images = images.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
@@ -56,38 +52,25 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp
         scaler.update()
 
         b = images.size(0)
-        total_loss += loss.detach() * b
+        total_loss += loss.item() * b
         total_samples += b
-        step_time = time.time() - end
-        total_data_time += data_time
-        total_step_time += step_time
 
-        if step % cfg.progress_interval == 0 or step == len(loader):
-            pbar.set_postfix({
-                "loss": f"{loss.detach().item():.4f}",
-                "avg_loss": f"{(total_loss / total_samples).item():.4f}",
-                "data_s": f"{total_data_time / step:.3f}",
-                "step_s": f"{total_step_time / step:.3f}",
-            })
-        end = time.time()
+        pbar.set_postfix({
+            "loss": f"{loss.item():.4f}",
+            "avg_loss": f"{total_loss / total_samples:.4f}",
+        })
 
-    return (total_loss / total_samples).item()
+    return total_loss / total_samples
 
 
 @torch.no_grad()
 def evaluate(model, loader, criterion, device, use_amp, epoch: int):
     model.eval()
-    total_loss = torch.zeros((), device=device)
-    total_dice = torch.zeros((), device=device)
-    total_iou = torch.zeros((), device=device)
-    total_samples = 0
-    total_data_time, total_step_time = 0.0, 0.0
+    total_loss, total_dice, total_iou, total_samples = 0.0, 0.0, 0.0, 0
 
     pbar = tqdm(loader, desc=f"Epoch {epoch:2d}/{cfg.epochs} [Val]  ", leave=False)
-    end = time.time()
-    for step, (images, masks) in enumerate(pbar, start=1):
-        data_time = time.time() - end
-        images = images.to(device, non_blocking=True, memory_format=torch.channels_last)
+    for images, masks in pbar:
+        images = images.to(device, non_blocking=True)
         masks = masks.to(device, non_blocking=True)
 
         with torch.autocast(device_type=device.type, enabled=use_amp):
@@ -95,28 +78,21 @@ def evaluate(model, loader, criterion, device, use_amp, epoch: int):
         logits = logits.float()
 
         b = images.size(0)
-        total_loss += criterion(logits, masks).detach() * b
-        total_dice += dice_score_tensor(logits, masks) * b
-        total_iou += iou_score_tensor(logits, masks) * b
+        total_loss += criterion(logits, masks).item() * b
+        total_dice += dice_score(logits, masks) * b
+        total_iou += iou_score(logits, masks) * b
         total_samples += b
-        step_time = time.time() - end
-        total_data_time += data_time
-        total_step_time += step_time
 
-        if step % cfg.progress_interval == 0 or step == len(loader):
-            pbar.set_postfix({
-                "val_loss": f"{(total_loss / total_samples).item():.4f}",
-                "dice": f"{(total_dice / total_samples).item():.4f}",
-                "iou": f"{(total_iou / total_samples).item():.4f}",
-                "data_s": f"{total_data_time / step:.3f}",
-                "step_s": f"{total_step_time / step:.3f}",
-            })
-        end = time.time()
+        pbar.set_postfix({
+            "val_loss": f"{total_loss / total_samples:.4f}",
+            "dice": f"{total_dice / total_samples:.4f}",
+            "iou": f"{total_iou / total_samples:.4f}",
+        })
 
     return (
-        (total_loss / total_samples).item(),
-        (total_dice / total_samples).item(),
-        (total_iou / total_samples).item(),
+        total_loss / total_samples,
+        total_dice / total_samples,
+        total_iou / total_samples,
     )
 
 
@@ -124,10 +100,6 @@ def main():
     cfg.display()
     device = torch.device(cfg.device)
     use_amp = device.type == "cuda"
-    if device.type == "cuda":
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
     os.makedirs(cfg.output_dir, exist_ok=True)
 
     # 1. DataLoaders
@@ -135,8 +107,6 @@ def main():
 
     # 2. Model & Optimization
     model = ResNetUNet(pretrained=True).to(device)
-    if device.type == "cuda":
-        model = model.to(memory_format=torch.channels_last)
     criterion = BCEDiceLoss()
 
     enc_params = [p for n, p in model.named_parameters() if n.startswith("encoder.")]
@@ -150,14 +120,8 @@ def main():
 
     # Multi-GPU DataParallel Support (e.g. 2x T4 on Kaggle)
     num_gpus = torch.cuda.device_count()
-    if cfg.use_data_parallel and num_gpus > 1:
+    if num_gpus > 1:
         print(f"--> Multi-GPU detected: using {num_gpus} GPUs with nn.DataParallel")
-        batch_per_gpu = cfg.batch_size // num_gpus
-        if batch_per_gpu < 16:
-            print(
-                f"--> Warning: batch_size={cfg.batch_size} gives only ~{batch_per_gpu} samples/GPU. "
-                "Increase batch_size or disable DataParallel for better utilization."
-            )
         model = nn.DataParallel(model)
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(

@@ -62,7 +62,20 @@ python train.py
 python plot.py --csv outputs/history.csv --out outputs/curves.png
 ```
 
-### 4. Background Removal Inference
+### 4. Profile Training Speed
+Run a short timing pass before full training to find the bottleneck:
+```bash
+python profile_train.py --train-batches 50 --val-batches 10 --batch-size 64 --num-workers 2
+```
+
+Compare against one GPU if `nn.DataParallel` looks suspicious:
+```bash
+python profile_train.py --train-batches 50 --batch-size 64 --single-gpu
+```
+
+The report breaks batch time into data loading, CPU-to-GPU transfer, forward, loss, backward, and optimizer stages.
+
+### 5. Background Removal Inference
 
 #### Extract Transparent RGBA Cutout (Default):
 ```bash
@@ -89,10 +102,7 @@ from config import cfg
 
 cfg.data_dir = "/kaggle/input/p3m-10k"   # Path to images and masks
 cfg.image_size = 256                    # Input resolution
-cfg.batch_size = 64                     # Batch size per step; keep >=16 samples per GPU
-cfg.num_workers = 4                     # Increase if the GPU waits between batches
-cfg.cache_resized = True                # Resize images/masks once, then train from cache
-cfg.rotation_degrees = 0.0              # Set to 10.0 for stronger but slower augmentation
+cfg.batch_size = 16                     # Batch size per step
 cfg.epochs = 40                         # Total training epochs
 cfg.lr = 1e-3                           # Decoder learning rate
 cfg.encoder_lr = 1e-4                   # Pretrained backbone learning rate
