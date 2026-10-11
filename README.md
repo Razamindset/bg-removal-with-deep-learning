@@ -1,45 +1,32 @@
-# Deep Learning Background Removal with ResNet-34 U-Net
+# Deep Learning Background Removal (ResNet-34 U-Net)
 
-An end-to-end deep learning background removal / salient object matting system based on a U-Net architecture with a pretrained ResNet-34 backbone and custom decoder layers.
-
----
-
-## Architecture Overview
-
-- **Encoder**: Pretrained ImageNet ResNet-34 feature extractor.
-- **Decoder**: Multi-stage transposed convolution / double convolution blocks with skip connections from encoder levels.
-- **Loss Function**: Masked Binary Cross Entropy (BCE) + Soft Dice Loss (`BCEDiceLoss`).
-- **Optimization**:
-  - Backbone warmup / freezing (`freeze_epochs: 3`) to stabilize decoder initialization.
-  - Cosine Annealing learning rate schedule (`CosineAnnealingLR`).
-  - Gradient norm clipping to prevent gradient explosions with AMP mixed precision.
-  - Early stopping monitoring validation Dice score.
+A streamlined, production-grade deep learning background removal system specialized for human portraits and objects. Built with a U-Net architecture featuring a pretrained ResNet-34 backbone and an artifact-free bilinear decoder.
 
 ---
 
-## Project Structure
+## Key Highlights
+
+- **Pretrained Backbone**: ResNet-34 ImageNet feature extractor with warmup freezing.
+- **Smooth Bilinear Decoder**: Replaces transposed convolutions with bilinear upsampling + conv to eliminate checkerboard edge artifacts on hair and body boundaries.
+- **Loss & Metrics**: Soft Dice Loss + Binary Cross Entropy (`BCEDiceLoss`), evaluated with Dice score and IoU.
+- **Multi-GPU Ready**: Automatically detects multiple GPUs (e.g. 2x T4 on Kaggle) and enables `torch.nn.DataParallel`.
+- **Flat & Clean Codebase**: No complex YAML parsers, no deep folder nesting. Every file is self-contained and easy to read.
+
+---
+
+## Clean Project Structure
 
 ```
-├── configs/
-│   ├── pets.yaml                     # Full production training configuration
-│   └── smoke_test.yaml               # 2-epoch dry run sanity check configuration
-├── notebooks/
-│   └── kaggle_training_pipeline.ipynb # Complete step-by-step Kaggle notebook
-├── src/
-│   ├── dataset/
-│   │   └── pets.py                   # Oxford-IIIT Pet dataset loader with auto path resolution
-│   ├── models/
-│   │   ├── double_conv.py            # Double Conv block (Conv-BN-ReLU x2)
-│   │   ├── encoder.py                # ResNet-34 feature extractor
-│   │   ├── decoder.py                # Upsampling + skip concatenation block
-│   │   └── unet.py                   # Complete ResNetUnet architecture
-│   ├── losses.py                     # Masked BCE + Dice loss
-│   ├── metrics.py                    # Dice and IoU evaluation metrics
-│   ├── plot_history.py               # Visualizer for loss, Dice, IoU & LR curves
-│   ├── predict.py                    # Production inference pipeline (RGBA, white bg, etc.)
-│   └── train.py                      # Multi-epoch training engine
-├── requirements.txt                  # Python dependencies
-└── README.md                         # Documentation
+├── config.py         # All hyperparameters and paths in one clean Python class
+├── dataset.py        # Paired image + mask/matte dataset loader with augmentations
+├── model.py          # Unified U-Net architecture (ResNet-34 + Bilinear Decoder)
+├── loss.py           # Combined BCEDiceLoss and Dice/IoU evaluation metrics
+├── train.py          # Training loop with Multi-GPU, CosineAnnealingLR, and early stopping
+├── predict.py        # Inference pipeline (transparent PNGs, solid backgrounds)
+├── plot.py           # Script to plot Loss, Dice, and IoU curves from history.csv
+├── notebook.ipynb    # End-to-end Kaggle training & inference walkthrough
+├── requirements.txt  # Python package dependencies
+└── README.md         # Documentation
 ```
 
 ---
@@ -54,69 +41,57 @@ pip install -r requirements.txt
 
 ---
 
-## Training on Kaggle
+## Quick Start
 
-The recommended environment for training is **Kaggle** (2x T4 GPUs):
+### 1. Training on Kaggle (Recommended)
+Open and run [`notebook.ipynb`](notebook.ipynb) on Kaggle:
+- Supports 2x T4 GPUs out of the box with `nn.DataParallel`.
+- Set dataset path in `config.py` (e.g., `/kaggle/input/p3m-10k`).
+- Automatically handles asset caching, training, curve plotting, sample visual cutouts, and artifact compression.
 
-1. Upload or clone the repository into Kaggle (`/kaggle/working`).
-2. Attach **The Oxford-IIIT Pet Dataset** as an input, or enable **Internet: ON** in notebook settings.
-3. Open and run [`notebooks/kaggle_training_pipeline.ipynb`](notebooks/kaggle_training_pipeline.ipynb):
-   - **Step 1: Sanity Dry Run**: Runs 2 epochs with `configs/smoke_test.yaml`.
-   - **Step 2: Full Production Training**: Runs 100 epochs with `configs/pets.yaml`.
-   - **Step 3: Training Graphs**: Generates and plots multi-panel metric curves.
-   - **Step 4: Inference**: Generates transparent cutouts and studio white backgrounds.
-   - **Step 5: Bundle Artifacts**: Compresses checkpoints and predictions into a downloadable zip file.
-
----
-
-## Local Training
-
-### Quick 2-Epoch Sanity Test:
+### 2. Training Locally
 ```bash
-python -m src.train --config configs/smoke_test.yaml
+python train.py
+```
+- Automatically uses GPU if available, or CPU.
+- Checkpoints are saved to `outputs/best_model.pth` and `outputs/last_model.pth`.
+- History is logged to `outputs/history.csv`.
+
+### 3. Plot Training Curves
+```bash
+python plot.py --csv outputs/history.csv --out outputs/curves.png
 ```
 
-### Full Production Training:
+### 4. Background Removal Inference
+
+#### Extract Transparent RGBA Cutout (Default):
 ```bash
-python -m src.train --config configs/pets.yaml
+python predict.py --weights outputs/best_model.pth --input path/to/image.jpg --output outputs/predictions
 ```
 
-### Resume Interrupted Training:
+#### Process an Entire Folder:
 ```bash
-python -m src.train --config configs/pets.yaml --resume
+python predict.py --weights outputs/best_model.pth --input path/to/folder --output outputs/predictions
 ```
 
----
-
-## Plotting Metrics & Learning Curves
-
-Generate training curves from `history.csv`:
+#### Replace Background with Studio White:
 ```bash
-python -m src.plot_history --csv outputs/history.csv --output outputs/training_curves.png
+python predict.py --weights outputs/best_model.pth --input path/to/image.jpg --bg-color 255 255 255
 ```
 
 ---
 
-## Inference / Background Removal
+## Configuration
 
-The inference pipeline in [`src/predict.py`](src/predict.py) preserves aspect ratios with letterboxing, upsamples smooth alpha boundaries, and produces cutouts.
+All settings can be customized in [`config.py`](config.py):
+```python
+from config import cfg
 
-### 1. Transparent RGBA PNG (Default)
-```bash
-python -m src.predict --weights outputs/best.pth --input path/to/image.jpg --output outputs/predictions
-```
-
-### 2. Process an Entire Folder & Export Masks
-```bash
-python -m src.predict --weights outputs/best.pth --input path/to/folder --output outputs/predictions --save-mask
-```
-
-### 3. Replace Background with Studio White
-```bash
-python -m src.predict --weights outputs/best.pth --input path/to/image.jpg --bg-color 255 255 255
-```
-
-### 4. Replace Background with Custom Image
-```bash
-python -m src.predict --weights outputs/best.pth --input path/to/image.jpg --bg-image path/to/background.jpg
+cfg.data_dir = "/kaggle/input/p3m-10k"   # Path to images and masks
+cfg.image_size = 256                    # Input resolution
+cfg.batch_size = 16                     # Batch size per step
+cfg.epochs = 40                         # Total training epochs
+cfg.lr = 1e-3                           # Decoder learning rate
+cfg.encoder_lr = 1e-4                   # Pretrained backbone learning rate
+cfg.freeze_epochs = 2                   # Backbone warmup freeze epochs
 ```
