@@ -1,10 +1,12 @@
-1. Write config loading in train.py
-2. Add checkpointing 
-3. early stoppping, 
-4. mIxed loss
-5. weights freezing
-6. Resuming
-7. grpahs 
-8. predictions
+[x] 1. Write config loading in train.py (Done)
+[x] 2. Add checkpointing (Done - best.pth, last.pth)
+[x] 3. Early stopping (Done - patience on val_dice)
+[x] 4. Mixed loss (Done - BCEDiceLoss)
+[x] 5. Weights freezing (Done - freeze_epochs warmup for backbone)
+[x] 6. Resuming (Done - --resume flag)
+[x] 7. Graphs (Done - src/plot_history.py)
+[x] 8. Predictions (Done - src/predict.py)
+[x] 9. Kaggle Notebook Pipeline (Done - notebooks/kaggle_training_pipeline.ipynb)
 
-Pets -> other large dataset
+Future milestone:
+Pets -> other large dataset (DIS5K / DUTS-TR / P3M-10k)

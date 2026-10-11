@@ -1,0 +1,26 @@
+seed: 42
+
+# data
+data_root: /kaggle/working/data
+val_fraction: 0.1
+image_size: 256
+num_workers: 2
+
+# training
+batch_size: 16
+epochs: 2                  # quick 2-epoch sanity check
+lr: 1.0e-3
+encoder_lr: 1.0e-4
+min_lr: 1.0e-6
+loss: bce_dice
+patience: 5
+freeze_epochs: 1
+max_grad_norm: 1.0
+scheduler: cosine
+
+# model
+encoder: resnet34
+pretrained: true
+
+# output
+output_dir: /kaggle/working/outputs_smoke_test

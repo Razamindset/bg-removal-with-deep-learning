@@ -1,4 +1,7 @@
+import os
+import pathlib
 import random
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -14,12 +17,60 @@ MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 
 
+def resolve_dataset_root(root: str) -> Tuple[str, bool]:
+    """
+    Checks if OxfordIIITPet already exists locally or in common Kaggle/Colab directories.
+    Returns:
+        (resolved_root, should_download)
+    If images already exist, should_download is set to False to avoid read-only
+    filesystem PermissionErrors (common on Kaggle /kaggle/input/) or network timeouts.
+    """
+    candidates = [
+        pathlib.Path(root),
+        pathlib.Path("./data"),
+        pathlib.Path("/kaggle/input/the-oxfordiiit-pet-dataset"),
+        pathlib.Path("/kaggle/input/oxford-iiit-pet"),
+        pathlib.Path("/kaggle/working/data"),
+    ]
+
+    for p in candidates:
+        if not p.exists():
+            continue
+
+        # Case 1: p / oxford-iiit-pet / images exists
+        if (p / "oxford-iiit-pet" / "images").is_dir() and (p / "oxford-iiit-pet" / "annotations").is_dir():
+            return str(p), False
+
+        # Case 2: p itself is oxford-iiit-pet (contains images & annotations directly)
+        if (p / "images").is_dir() and (p / "annotations").is_dir():
+            if p.name == "oxford-iiit-pet":
+                return str(p.parent), False
+            # If folder name is different (e.g. 'the-oxfordiiit-pet-dataset'), link/point appropriately
+            return str(p.parent), False
+
+    # Not found locally: return requested root and attempt download
+    return root, True
+
+
 class PetDataset(Dataset):
     def __init__(self, root, split="trainval", image_size=256, augment=False, download=True):
         super().__init__()
-        self.dataset = datasets.OxfordIIITPet(
-            root=root, split=split, target_types="segmentation", download=download
-        )
+        resolved_root, auto_download = resolve_dataset_root(root)
+        final_download = download and auto_download
+
+        try:
+            self.dataset = datasets.OxfordIIITPet(
+                root=resolved_root, split=split, target_types="segmentation", download=final_download
+            )
+        except Exception as e:
+            if final_download:
+                raise RuntimeError(
+                    f"Failed to download/load OxfordIIITPet at '{resolved_root}': {e}\n"
+                    "Tip for Kaggle: Make sure Internet is ON in the right sidebar (Settings -> Internet: ON), "
+                    "or attach 'The Oxford-IIIT Pet Dataset' as an Input to your notebook."
+                ) from e
+            raise
+
         self.image_size = image_size
         self.augment = augment
         self.jitter = T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)
@@ -63,10 +114,14 @@ class PetDataset(Dataset):
 
 def get_dataloaders(root, image_size=256, batch_size=32, val_fraction=0.1,
                     seed=42, num_workers=2):
-    # two views of the same data: one with augmentation, one without
-    train_full = PetDataset(root, "trainval", image_size, augment=True)
-    val_full = PetDataset(root, "trainval", image_size, augment=False)
-    test_set = PetDataset(root, "test", image_size, augment=False)
+    # Resolve root once
+    resolved_root, should_download = resolve_dataset_root(root)
+
+    # First load train set (handles download if needed)
+    train_full = PetDataset(resolved_root, "trainval", image_size, augment=True, download=should_download)
+    # Subsequent loads reuse data with download=False
+    val_full = PetDataset(resolved_root, "trainval", image_size, augment=False, download=False)
+    test_set = PetDataset(resolved_root, "test", image_size, augment=False, download=False)
 
     # seeded split, so every run uses the same train/val images
     g = torch.Generator().manual_seed(seed)
