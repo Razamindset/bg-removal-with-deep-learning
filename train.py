@@ -33,9 +33,12 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp
     model.train()
     total_loss = torch.zeros((), device=device)
     total_samples = 0
+    total_data_time, total_step_time = 0.0, 0.0
 
     pbar = tqdm(loader, desc=f"Epoch {epoch:2d}/{cfg.epochs} [Train]", leave=False)
+    end = time.time()
     for step, (images, masks) in enumerate(pbar, start=1):
+        data_time = time.time() - end
         images = images.to(device, non_blocking=True, memory_format=torch.channels_last)
         masks = masks.to(device, non_blocking=True)
 
@@ -55,12 +58,18 @@ def train_one_epoch(model, loader, criterion, optimizer, scaler, device, use_amp
         b = images.size(0)
         total_loss += loss.detach() * b
         total_samples += b
+        step_time = time.time() - end
+        total_data_time += data_time
+        total_step_time += step_time
 
         if step % cfg.progress_interval == 0 or step == len(loader):
             pbar.set_postfix({
                 "loss": f"{loss.detach().item():.4f}",
                 "avg_loss": f"{(total_loss / total_samples).item():.4f}",
+                "data_s": f"{total_data_time / step:.3f}",
+                "step_s": f"{total_step_time / step:.3f}",
             })
+        end = time.time()
 
     return (total_loss / total_samples).item()
 
@@ -72,9 +81,12 @@ def evaluate(model, loader, criterion, device, use_amp, epoch: int):
     total_dice = torch.zeros((), device=device)
     total_iou = torch.zeros((), device=device)
     total_samples = 0
+    total_data_time, total_step_time = 0.0, 0.0
 
     pbar = tqdm(loader, desc=f"Epoch {epoch:2d}/{cfg.epochs} [Val]  ", leave=False)
+    end = time.time()
     for step, (images, masks) in enumerate(pbar, start=1):
+        data_time = time.time() - end
         images = images.to(device, non_blocking=True, memory_format=torch.channels_last)
         masks = masks.to(device, non_blocking=True)
 
@@ -87,13 +99,19 @@ def evaluate(model, loader, criterion, device, use_amp, epoch: int):
         total_dice += dice_score_tensor(logits, masks) * b
         total_iou += iou_score_tensor(logits, masks) * b
         total_samples += b
+        step_time = time.time() - end
+        total_data_time += data_time
+        total_step_time += step_time
 
         if step % cfg.progress_interval == 0 or step == len(loader):
             pbar.set_postfix({
                 "val_loss": f"{(total_loss / total_samples).item():.4f}",
                 "dice": f"{(total_dice / total_samples).item():.4f}",
                 "iou": f"{(total_iou / total_samples).item():.4f}",
+                "data_s": f"{total_data_time / step:.3f}",
+                "step_s": f"{total_step_time / step:.3f}",
             })
+        end = time.time()
 
     return (
         (total_loss / total_samples).item(),

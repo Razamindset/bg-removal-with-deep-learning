@@ -1,13 +1,14 @@
 import glob
+import hashlib
 import os
 import random
 from typing import List, Tuple
 
-import numpy as np
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 from PIL import Image
+from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
 
 # ImageNet statistics for ResNet backbone
@@ -69,10 +70,19 @@ class HumanMattingDataset(Dataset):
     Loads paired (image, mask) and applies synchronized augmentations.
     """
 
-    def __init__(self, pairs: List[Tuple[str, str]], image_size: int = 256, augment: bool = False):
+    def __init__(
+        self,
+        pairs: List[Tuple[str, str]],
+        image_size: int = 256,
+        augment: bool = False,
+        rotation_degrees: float = 0.0,
+        resize: bool = True,
+    ):
         self.pairs = pairs
         self.image_size = image_size
         self.augment = augment
+        self.rotation_degrees = rotation_degrees
+        self.resize = resize
         self.jitter = T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.1)
 
     def __len__(self):
@@ -85,10 +95,10 @@ class HumanMattingDataset(Dataset):
         img = Image.open(img_path).convert("RGB")
         mask = Image.open(mask_path).convert("L")
 
-        # Resize to model resolution
-        size = (self.image_size, self.image_size)
-        img = img.resize(size, Image.BILINEAR)
-        mask = mask.resize(size, Image.BILINEAR)
+        if self.resize:
+            size = (self.image_size, self.image_size)
+            img = img.resize(size, Image.BILINEAR)
+            mask = mask.resize(size, Image.BILINEAR)
 
         # Convert to tensors
         img_tensor = TF.to_tensor(img)                     # [3, H, W] in range 0..1
@@ -101,10 +111,11 @@ class HumanMattingDataset(Dataset):
                 img_tensor = TF.hflip(img_tensor)
                 mask_tensor = TF.hflip(mask_tensor)
 
-            # 2. Random slight rotation (-10 to 10 degrees)
-            angle = random.uniform(-10.0, 10.0)
-            img_tensor = TF.rotate(img_tensor, angle, interpolation=TF.InterpolationMode.BILINEAR)
-            mask_tensor = TF.rotate(mask_tensor, angle, interpolation=TF.InterpolationMode.BILINEAR)
+            # 2. Optional random rotation. This is CPU-heavy, so keep it at 0 for throughput.
+            if self.rotation_degrees > 0:
+                angle = random.uniform(-self.rotation_degrees, self.rotation_degrees)
+                img_tensor = TF.rotate(img_tensor, angle, interpolation=TF.InterpolationMode.BILINEAR)
+                mask_tensor = TF.rotate(mask_tensor, angle, interpolation=TF.InterpolationMode.BILINEAR)
 
             # 3. Photometric jitter on image only
             img_tensor = self.jitter(img_tensor)
@@ -113,6 +124,48 @@ class HumanMattingDataset(Dataset):
         img_tensor = TF.normalize(img_tensor, MEAN, STD)
 
         return img_tensor, mask_tensor
+
+
+def _default_cache_dir(cfg) -> str:
+    if cfg.cache_dir:
+        return cfg.cache_dir
+    return os.path.join(cfg.output_dir, f"cache_{cfg.image_size}")
+
+
+def _prepare_resized_cache(
+    pairs: List[Tuple[str, str]],
+    image_size: int,
+    cache_dir: str,
+) -> List[Tuple[str, str]]:
+    """
+    Resizes source image/mask pairs once and reuses them across epochs.
+    This avoids repeated large-image decode + resize work inside every DataLoader worker.
+    """
+    image_dir = os.path.join(cache_dir, "images")
+    mask_dir = os.path.join(cache_dir, "masks")
+    os.makedirs(image_dir, exist_ok=True)
+    os.makedirs(mask_dir, exist_ok=True)
+
+    cached_pairs = []
+    size = (image_size, image_size)
+    for idx, (img_path, mask_path) in enumerate(tqdm(pairs, desc="Preparing resized cache")):
+        pair_key = f"{img_path}|{mask_path}".encode("utf-8")
+        path_hash = hashlib.sha1(pair_key).hexdigest()[:12]
+        base = f"{idx:06d}_{path_hash}_{os.path.splitext(os.path.basename(img_path))[0]}"
+        cached_img = os.path.join(image_dir, f"{base}.jpg")
+        cached_mask = os.path.join(mask_dir, f"{base}.png")
+
+        if not (os.path.isfile(cached_img) and os.path.isfile(cached_mask)):
+            with Image.open(img_path) as img:
+                img = img.convert("RGB").resize(size, Image.BILINEAR)
+                img.save(cached_img, quality=95, optimize=False)
+            with Image.open(mask_path) as mask:
+                mask = mask.convert("L").resize(size, Image.BILINEAR)
+                mask.save(cached_mask)
+
+        cached_pairs.append((cached_img, cached_mask))
+
+    return cached_pairs
 
 
 def get_dataloaders(cfg):
@@ -126,6 +179,11 @@ def get_dataloaders(cfg):
             "Ensure the dataset directory contains images and corresponding masks/mattes."
         )
 
+    if cfg.cache_resized:
+        cache_dir = _default_cache_dir(cfg)
+        print(f"Preparing resized dataset cache at: {cache_dir}")
+        pairs = _prepare_resized_cache(pairs, cfg.image_size, cache_dir)
+
     # Deterministic split
     random.seed(cfg.seed)
     shuffled = pairs.copy()
@@ -134,9 +192,21 @@ def get_dataloaders(cfg):
     n_val = max(1, int(len(shuffled) * cfg.val_split))
     val_pairs = shuffled[:n_val]
     train_pairs = shuffled[n_val:]
+    resize_in_dataset = not cfg.cache_resized
 
-    train_ds = HumanMattingDataset(train_pairs, image_size=cfg.image_size, augment=True)
-    val_ds = HumanMattingDataset(val_pairs, image_size=cfg.image_size, augment=False)
+    train_ds = HumanMattingDataset(
+        train_pairs,
+        image_size=cfg.image_size,
+        augment=True,
+        rotation_degrees=cfg.rotation_degrees,
+        resize=resize_in_dataset,
+    )
+    val_ds = HumanMattingDataset(
+        val_pairs,
+        image_size=cfg.image_size,
+        augment=False,
+        resize=resize_in_dataset,
+    )
 
     loader_kwargs = {
         "num_workers": cfg.num_workers,

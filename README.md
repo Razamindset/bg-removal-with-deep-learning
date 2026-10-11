@@ -89,7 +89,10 @@ from config import cfg
 
 cfg.data_dir = "/kaggle/input/p3m-10k"   # Path to images and masks
 cfg.image_size = 256                    # Input resolution
-cfg.batch_size = 16                     # Batch size per step
+cfg.batch_size = 64                     # Batch size per step; keep >=16 samples per GPU
+cfg.num_workers = 4                     # Increase if the GPU waits between batches
+cfg.cache_resized = True                # Resize images/masks once, then train from cache
+cfg.rotation_degrees = 0.0              # Set to 10.0 for stronger but slower augmentation
 cfg.epochs = 40                         # Total training epochs
 cfg.lr = 1e-3                           # Decoder learning rate
 cfg.encoder_lr = 1e-4                   # Pretrained backbone learning rate

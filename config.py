@@ -11,6 +11,9 @@ class Config:
     batch_size: int = 64
     num_workers: int = 4
     seed: int = 42
+    cache_resized: bool = True
+    cache_dir: str = ""          # Empty = output_dir/cache_{image_size}; Kaggle can use /kaggle/working/cache_256
+    rotation_degrees: float = 0.0 # Rotation is CPU-heavy; set to 10.0 to restore the old augmentation
 
     # --- Training Hyperparameters ---
     epochs: int = 40
