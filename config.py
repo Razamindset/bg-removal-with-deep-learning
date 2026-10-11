@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class Config:
     # --- Dataset & Paths ---
     # Common Kaggle path: /kaggle/input/p3m-10k or /kaggle/input/portrait-matting or ./data
-    data_dir: str = "/kaggle/input/p3m-10k"
+    data_dir: str = "/kaggle/input/datasets/rahulbhalley/p3m-10k"
     image_size: int = 256
     val_split: float = 0.1
     batch_size: int = 16
