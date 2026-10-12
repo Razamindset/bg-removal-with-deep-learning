@@ -108,3 +108,52 @@ cfg.lr = 1e-3                           # Decoder learning rate
 cfg.encoder_lr = 1e-4                   # Pretrained backbone learning rate
 cfg.freeze_epochs = 2                   # Backbone warmup freeze epochs
 ```
+
+---
+
+## Experimental Results & Benchmark
+
+The model was trained for 40 epochs on the **P3M-10k** dataset with a ResNet-34 backbone pretrained on ImageNet and a custom artifact-free bilinear decoder using Cosine Annealing learning rate schedule.
+
+### 1. Quantitative Performance
+
+| Metric | Initial (Epoch 1) | Best Model (Epoch 35) | Final (Epoch 40) |
+|---|---|---|---|
+| **Validation Dice Score** | 0.9650 | **0.9839** | 0.9836 |
+| **Validation IoU (Jaccard)** | 0.9352 | **0.9692** | 0.9687 |
+| **Validation Loss (BCEDice)**| 0.2532 | **0.0502** | 0.0513 |
+| **Training Loss** | 0.4878 | **0.0380** | 0.0376 |
+
+> **Key takeaway:** The model converges steadily without overfitting. The validation Dice score reaches **98.39%** and validation IoU reaches **96.92%**, showing crisp boundary detection on challenging subjects.
+
+---
+
+### 2. Training Dynamics & Convergence
+
+Training and validation loss along with Dice and IoU metrics over 40 epochs:
+
+<p align="center">
+  <img src="assets/curves.png" alt="Training and Validation Curves" width="850"/>
+</p>
+
+- **Loss Curves (Left):** Smooth convergence with learning rate decay from $10^{-3}$ down to $10^{-6}$.
+- **Dice & IoU Curves (Middle & Right):** Rapid rise during early epochs, stabilizing above $0.98$ Dice and $0.96$ IoU.
+
+---
+
+### 3. Visual Results & Showcase
+
+A side-by-side comparison across portrait test images (Original Image vs. Predicted Mask vs. Clean Cutout):
+
+<p align="center">
+  <img src="assets/1_comparison.png" alt="Sample 1 Comparison" width="750"/>
+</p>
+
+<p align="center">
+  <img src="assets/3_comparison.png" alt="Sample 2 Comparison" width="750"/>
+</p>
+
+#### Complete Portfolio Showcase:
+- **Comprehensive Showcase PDF:** [`assets/background_removal_showcase.pdf`](assets/background_removal_showcase.pdf) — Includes full model architecture details, training curve analysis, and 8 diverse case studies (portraits, complex hairstyles, varied lighting, solid backgrounds).
+
+
